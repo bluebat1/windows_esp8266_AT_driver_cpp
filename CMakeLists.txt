@@ -4,7 +4,10 @@ cmake_minimum_required(VERSION 3.10)
 # 设置项目名称和版本号
 project(MyProject VERSION 1.0)
 
+# 指定使用 C++11
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)  # 强制使用指定的标准
+set(CMAKE_CXX_EXTENSIONS ON)
 
 # 添加所有源文件到一个变量中
 # file(GLOB_RECURSE  SOURCES "./*.cpp")
