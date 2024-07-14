@@ -49,6 +49,23 @@ TimerComponent timerComponent;
 // wifi 顶层状态机
 StateMachine WifiTopLayerSM;
 
+// WiFi 响应指令操作
+class WifiResponesDef {
+public:
+    bool ok;
+    bool error;
+    WifiResponesDef(){
+        ok = false;
+        error = false;
+    };
+    ~WifiResponesDef(){};
+    void Clear() {
+        ok = false;
+        error = false;
+    }
+};
+WifiResponesDef WifiRespones;
+
 // wifi 状态机初始化
 void WifiTopLayerSMInit()
 {
@@ -84,6 +101,8 @@ void WifiTopLayerSMInit()
         static bool timeoutFlag = false;
         // 从其他节点跳转而来
         if (beforState != WifiTopLayerState_reset) {
+
+            WifiRespones.Clear();
             TxMsgDef msg;
             msg.size = sprintf((char*)msg.data, "AT+RST\r\n");
             TxQueue.push(msg);
@@ -93,27 +112,40 @@ void WifiTopLayerSMInit()
             });
         }
         if (timeoutFlag == false) {
+            
             return WifiTopLayerState_reset;
         }
-
-        return WifiTopLayerState_setup; });
+        return WifiTopLayerState_setup; 
+    });
     WifiTopLayerSM.LinkState(WifiTopLayerState_reset, WifiTopLayerState_reset, []() {});
     WifiTopLayerSM.LinkState(WifiTopLayerState_reset, WifiTopLayerState_setup, []() {});
 
     // 启动
     WifiTopLayerSM.AddStateNode(WifiTopLayerState_setup, [](StateMachine::StateType beforState) -> StateMachine::StateType {
         static bool timeoutFlag = false;
+        static int timerHandle = 0;
         // 从其他节点跳转而来
         if (beforState != WifiTopLayerState_setup) {
             TxMsgDef msg;
             msg.size = sprintf((char*)msg.data, "AT\r\n");
             TxQueue.push(msg);
             // 添加一个定时器
-            timerComponent.AddTimer(1000, []() {
+            timerHandle = timerComponent.AddTimer(1000, []() {
                 timeoutFlag = true;
             });
+            // 清空响应 必须先于发送指令执行
+            WifiRespones.Clear();
         }
-
+        // 收到ok响应
+        if(WifiRespones.ok ) {
+            timerComponent.DelTimer(timerHandle);
+            return WifiTopLayerState_setup;
+        }else if (WifiRespones.error) // 收到 error 响应
+        {
+            timerComponent.DelTimer(timerHandle);
+            return WifiTopLayerState_error;
+        }
+        // 等待超时
         if (timeoutFlag == false) {
             return WifiTopLayerState_setup;
         }
@@ -121,7 +153,7 @@ void WifiTopLayerSMInit()
         return WifiTopLayerState_setup;
     });
     WifiTopLayerSM.LinkState(WifiTopLayerState_setup, WifiTopLayerState_setup, []() {});
-    WifiTopLayerSM.LinkState(WifiTopLayerState_setup, WifiTopLayerState_setup, []() {});
+    WifiTopLayerSM.LinkState(WifiTopLayerState_setup, WifiTopLayerState_error, []() {});
 
     WifiTopLayerSM.Goto(WifiTopLayerState_error);
 }
@@ -177,12 +209,12 @@ int main(int argc, const char** argv)
 
     // 监听OK指令
     WifiEvent.ListenEvent("OK", [](uint8_t* data, int len) {
-        logd("OK");
+        WifiRespones.ok = true;
     });
 
     // 监听ERROR指令
     WifiEvent.ListenEvent("ERROR", [](uint8_t* data, int len) {
-        logd("ERROR");
+        WifiRespones.error = true;
     });
 
     // 读取数据
@@ -264,13 +296,13 @@ int main(int argc, const char** argv)
         if (rxBufRemainFlag) {
             lineCount -= 1;
         }
-        logd("line count: %d", lineCount);
+        // logd("line count: %d", lineCount);
 
         // 处理每一行
         char* line = (char*)rxBuf;
         for (size_t i = 0; i < lineCount; i++)
         {
-            logd("line >> %s", line);
+            logd("RX line >> %s", line);
 
             // 遍历c++ map
             for (auto& it : WifiEvent.EventPool)
@@ -298,7 +330,7 @@ int main(int argc, const char** argv)
         logd("RX ---------------");
     }
 
-    //
+    // 关闭串口
     CloseHandle(hSerial);
     return 0;
 }
