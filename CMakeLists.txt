@@ -15,7 +15,7 @@ set(CMAKE_CXX_EXTENSIONS ON)
 # 添加所有源文件到一个变量中
 # file(GLOB_RECURSE  SOURCES "./*.cpp")
 
-FILE(GLOB SOURCE_FILES ${CMAKE_SOURCE_DIR}/*.cpp )
+FILE(GLOB SOURCE_FILES ${CMAKE_SOURCE_DIR}/*.cpp ${CMAKE_SOURCE_DIR}/src/*.cpp )
 message(${CMAKE_SOURCE_DIR})
 message(${SOURCE_FILES})
 
@@ -25,6 +25,7 @@ add_executable(MyProject ${SOURCE_FILES})
 
 # 设置包含的目录（如果有头文件需要包含）
 include_directories(./)
+include_directories(./inc)
 
 
 # 链接Windows库
