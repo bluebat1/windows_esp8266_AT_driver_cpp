@@ -8,6 +8,9 @@ project(MyProject VERSION 1.0)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)  # 强制使用指定的标准
 set(CMAKE_CXX_EXTENSIONS ON)
+# set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -S")
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -S")
+# set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -S")
 
 # 添加所有源文件到一个变量中
 # file(GLOB_RECURSE  SOURCES "./*.cpp")

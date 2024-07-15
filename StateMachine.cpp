@@ -35,13 +35,13 @@ bool StateMachine::RunLoop(){
 	// 查找连接
 	// 查找连接首端
 	if(stateLinkMap.find(nowState) == stateLinkMap.end()) {
-		logd("StateMachine Link A error . now state: %d ", nowState);
+		logd("StateMachine Link port-A error . now state: %d ", nowState);
 		return false;
 	}
 	// 查找连接末端
 	map<StateType, StateLinkHook> & subLink = stateLinkMap[nowState];
 	if(subLink.find(NextState) == subLink.end()) {
-		logd("StateMachine Link B error . next state: %d", NextState);
+		logd("StateMachine Link port-B error . next state: %d", NextState);
 		return false;
 	}
 	// 执行节点跳转钩子
