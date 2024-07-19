@@ -7,6 +7,8 @@
 #include <map>
 #include <string>
 
+#include <conio.h>  // For _kbhit and _getch
+
 #include "StateMachine.h"
 
 #include "EventModel.hpp"
@@ -217,7 +219,7 @@ void WifiTopLayerSMInit()
                         timeoutFlag = true;
                     });
                 }
-                if(!timeoutFlag) {
+                if(timeoutFlag == false) {
                     return WifiTopLayerState_AT_check;
                 }
                 return WifiTopLayerState_TT_exit;
@@ -244,13 +246,13 @@ void WifiTopLayerSMInit()
             TxMsgDef msg;
             msg.size = sprintf((char*)msg.data, "+++");
             TxQueue.push(msg);
-            //
+            // 等待
             timeoutFlag = false;
-            timerHandle = timerComponent.AddTimer(200, []() {
+            timerHandle = timerComponent.AddTimer(300, []() {
                 timeoutFlag = true;
             });
         }
-        if (!timeoutFlag)
+        if (timeoutFlag == false)
         {
             return WifiTopLayerState_TT_exit;
         }
@@ -269,7 +271,7 @@ void WifiTopLayerSMInit()
             logd("wifi AT entry ...");
             // 清空响应 必须先于发送指令执行
             WifiRespones.Clear();
-            // 退出透传模式
+            // 退出 透传模式
             TxMsgDef msg;
             msg.size = sprintf((char*)msg.data, "AT+CIPMODE=0\r\n");
             TxQueue.push(msg);
@@ -306,9 +308,18 @@ void WifiTopLayerSMInit()
         //
         if(befor != WifiTopLayerState_AT) {
             logd("wifi AT exec ...");
+            // 扫描AP
             if(wifiATFlags.flag.scanAP){
                 asyncATEvent.Init("AT+CWLAP\r\n", [](AsyncATEvent::Event event) {});
                 isRun = true;
+                wifiATFlags.flag.scanAP = 0;
+                return WifiTopLayerState_AT;
+            }
+            //
+            if(wifiATFlags.flag.getIPInfo) {
+                asyncATEvent.Init("AT+CIPSTA?\r\n", [](AsyncATEvent::Event event) {});
+                isRun = true;
+                wifiATFlags.flag.getIPInfo = 0;
                 return WifiTopLayerState_AT;
             }
         } 
@@ -362,7 +373,7 @@ void WifiTopLayerSMInit()
             logd("wifi AT exit ...");
             // 清空响应 必须先于发送指令执行
             WifiRespones.Clear();
-            // 退出透传模式
+            // 进入(透传接收模式)
             TxMsgDef msg;
             msg.size = sprintf((char*)msg.data, "AT+CIPMODE=1\r\n");
             TxQueue.push(msg);
@@ -402,7 +413,7 @@ void WifiTopLayerSMInit()
             logd("wifi AT exit ...");
             // 清空响应 必须先于发送指令执行
             WifiRespones.Clear();
-            // 退出透传模式
+            // 进入透传模式
             TxMsgDef msg;
             msg.size = sprintf((char*)msg.data, "AT+CIPSEND\r\n");
             TxQueue.push(msg);
@@ -447,6 +458,57 @@ void WifiTopLayerSMInit()
 
 
     WifiTopLayerSM.Goto(WifiTopLayerState_error);
+}
+
+// 处理键盘输入
+char keyBuffer[1024] = {0};
+int keyBufferIndex = 0;
+void KeyBoradFunc(){
+    if (_kbhit()) {
+        char key = _getch();
+        keyBuffer[keyBufferIndex++] = key;
+        keyBuffer[keyBufferIndex] = 0;
+        // Get the character
+        if(key == VK_ESCAPE){
+            exit(0);
+            return;
+        }
+        if(key != VK_RETURN) {
+            return;
+        }
+        keyBufferIndex = 0;
+        
+        if(TextUtil::WithStart(keyBuffer, "?")){
+            logd("please input number of function:");
+            logd("1.ScanAP");
+            logd("2.ConnectAP");
+            logd("3.ConnectSocket");
+            logd("4.Reset");
+            logd("5.GetIPInfo");
+            return;
+        }
+        if(strncmp(keyBuffer, "1", 1) == 0) {
+            wifiATFlags.flag.scanAP = 1;
+            return;
+        }
+        if(strncmp(keyBuffer, "2", 1) == 0) {
+            wifiATFlags.flag.connectAP = 1;
+            return;
+        }
+        if(strncmp(keyBuffer, "3", 1) == 0) {
+            wifiATFlags.flag.connectSocket = 1;
+            return;
+        }
+        if(strncmp(keyBuffer, "4", 1) == 0) {
+            wifiATFlags.flag.reset = 1;
+            return;
+        }
+        if(strncmp(keyBuffer, "5", 1) == 0) {
+            wifiATFlags.flag.getIPInfo = 1;
+            return;
+        }
+        
+    }
 }
 
 int main(int argc, const char** argv)
@@ -544,6 +606,9 @@ int main(int argc, const char** argv)
     // LOOP
     while (1)
     {
+        //监听键盘输入
+        KeyBoradFunc();
+
         Sleep(100);
         // 定时器组件处理
         timerComponent.TimerLoop();
@@ -569,7 +634,22 @@ int main(int argc, const char** argv)
         // {
         //     logd("read com error");
         //     CloseHandle(hSerial);
-        //     return -1;
+        //     Sleep(2222);
+        //     hSerial = CreateFile("\\\\.\\COM16",
+        //         GENERIC_READ | GENERIC_WRITE,
+        //         0,
+        //         NULL,
+        //         OPEN_EXISTING,
+        //         FILE_FLAG_OVERLAPPED,
+        //         NULL);
+        //     if (hSerial == INVALID_HANDLE_VALUE)
+        //     {
+        //         DWORD e = GetLastError();
+        //         logd("serial open error  %x", e);
+        //         return -1;
+        //     }
+        //     continue;
+        //     // return -1;
         // }
         if (readSize < 1)
         {
