@@ -6,8 +6,6 @@
 
 using namespace std;
 
-// 外部生成的定时器组件
-extern TimerComponent timerComponent;
 
 // 发送消息结构体
 typedef struct
@@ -16,7 +14,6 @@ typedef struct
     int size;
 } TxMsgDef;
 
-queue<TxMsgDef> TxQueue;
 
 // WiFi 响应指令操作
 class WifiResponesDef {
@@ -33,5 +30,9 @@ public:
         error = false;
     }
 };
+
+// 发送队列
+queue<TxMsgDef> TxQueue;
+// 
 WifiResponesDef WifiRespones;
 

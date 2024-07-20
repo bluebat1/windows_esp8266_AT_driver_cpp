@@ -5,6 +5,9 @@
 
 using namespace std;
 
+// 定时器组件
+extern TimerComponent timerComponent;
+
 // 1、这个事件模型支持轮询，等待由外部实现
 class AsyncATEvent
 {
@@ -26,7 +29,7 @@ public:
     };
     ~AsyncATEvent() {};
 
-    void Init(const char* cmd, EventHook hook);
+    void Init(const char* cmd, EventHook hook, int timeout, bool checkTimeout);
     Event Polling();
 
 private:
@@ -34,17 +37,23 @@ private:
     EventHook _hook;
     bool _writed = false;
     int timeoutHandle = 0;
+    int _timeout = 4000;
+    bool _checkTimeout = true;
 
 };
 
 // 初始化事件模型
 // cmd AT指令
 // hook 结果回调函数
-void AsyncATEvent::Init(const char* cmd, EventHook hook)
+// timeout 超时时间
+// checkTimeout 是否检查超时,为false时，polling超时后依然返回EventOK
+void AsyncATEvent::Init(const char* cmd, EventHook hook, int timeout, bool checkTimeout)
 {
     _cmd = cmd;
     _hook = hook;
     _writed = false;
+    _timeout = timeout;
+    _checkTimeout = checkTimeout;
 }
 
 // 轮询处理事件
@@ -59,7 +68,7 @@ AsyncATEvent::Event AsyncATEvent::Polling()
         TxQueue.push(msg);
         _writed = true;
         timeoutFlag = false;
-        timeoutHandle = timerComponent.AddTimer(4000, []() {
+        timeoutHandle = timerComponent.AddTimer(_timeout, []() {
             timeoutFlag = true;
         });
     }
@@ -89,6 +98,11 @@ AsyncATEvent::Event AsyncATEvent::Polling()
     if (_hook) {
         _hook(EventErrorTimeout);
     }
-    return EventErrorTimeout;
+    // 是否检查超时
+    if(_checkTimeout) {
+        return EventErrorTimeout;
+    }
+    // 不检查超时
+    return EventOK;
 }
 

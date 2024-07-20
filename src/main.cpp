@@ -88,6 +88,25 @@ StateMachine WifiAT_SM;
 // 异步 AT 事件模型
 AsyncATEvent asyncATEvent;
 
+// AT 操作选择器
+bool WifiSmAtSelect(){
+    // 扫描AP
+    if(wifiATFlags.flag.scanAP){
+        wifiATFlags.flag.scanAP = 0;
+        // 激活异步AT处理
+        asyncATEvent.Init("AT+CWLAP\r\n", [](AsyncATEvent::Event event) {}, 20000, true );
+        return true;
+    }
+    // 获取IP信息   
+    if(wifiATFlags.flag.getIPInfo) {
+        wifiATFlags.flag.getIPInfo = 0;
+        // 激活异步AT处理
+        asyncATEvent.Init("AT+CIPSTA?\r\n", [](AsyncATEvent::Event event) {}, 5555, true);
+        return true;
+    }
+    return false;
+}
+
 
 // wifi 状态机初始化
 void WifiTopLayerSMInit()
@@ -308,20 +327,14 @@ void WifiTopLayerSMInit()
         //
         if(befor != WifiTopLayerState_AT) {
             logd("wifi AT exec ...");
-            // 扫描AP
-            if(wifiATFlags.flag.scanAP){
-                asyncATEvent.Init("AT+CWLAP\r\n", [](AsyncATEvent::Event event) {});
+            // AT操作选择器
+            if(WifiSmAtSelect()) {
                 isRun = true;
-                wifiATFlags.flag.scanAP = 0;
                 return WifiTopLayerState_AT;
             }
-            //
-            if(wifiATFlags.flag.getIPInfo) {
-                asyncATEvent.Init("AT+CIPSTA?\r\n", [](AsyncATEvent::Event event) {});
-                isRun = true;
-                wifiATFlags.flag.getIPInfo = 0;
-                return WifiTopLayerState_AT;
-            }
+            
+            // 没有找到指令 跳过 AT 执行过程
+            isRun = false;
         } 
         if(isRun) {
             AsyncATEvent::Event e = asyncATEvent.Polling();
