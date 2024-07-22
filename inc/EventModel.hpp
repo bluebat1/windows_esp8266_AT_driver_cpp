@@ -12,8 +12,8 @@ class EventModel
 private:
     /* data */
 public:
-    EventModel(/* args */);
-    ~EventModel();
+    EventModel(/* args */){};
+    ~EventModel(){};
 
     typedef void(*Hook)(uint8_t *data, int size);
 
@@ -39,13 +39,5 @@ public:
     }
 
 };
-
-EventModel::EventModel(/* args */)
-{
-}
-
-EventModel::~EventModel()
-{
-}
 
 #endif // !_EventModel_h_

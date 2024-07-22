@@ -1,5 +1,4 @@
-#ifndef _TextUtil_h_
-#define _TextUtil_h_
+#pragma once
 
 #include <string.h>
 
@@ -8,8 +7,8 @@ class TextUtil
 private:
     /* data */
 public:
-    TextUtil(/* args */);
-    ~TextUtil();
+    TextUtil(/* args */){};
+    ~TextUtil(){};
 
     // 切割字符串
     static int Split(char *str, const char * delimit, int limit){
@@ -78,13 +77,3 @@ public:
     }
 };
 
-TextUtil::TextUtil(/* args */)
-{
-}
-
-TextUtil::~TextUtil()
-{
-}
-
-
-#endif // !_TextUtil_h_
