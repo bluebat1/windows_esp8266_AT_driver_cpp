@@ -11,13 +11,13 @@ extern TimerComponent timerComponent;
 static Wifi self;
 
 // 获取 WIFI 单例
-Wifi & Wifi::Instance() {
+Wifi& Wifi::Instance() {
     return self;
 }
 
 // 构造函数
 Wifi::Wifi() {
-    
+
     // 监听OK指令
     Event.ListenEvent("OK", [](uint8_t* data, int len) {
         self.Respones.ok = true;
@@ -26,6 +26,52 @@ Wifi::Wifi() {
     // 监听ERROR指令
     Event.ListenEvent("ERROR", [](uint8_t* data, int len) {
         self.Respones.error = true;
+    });
+
+    // 监听 AP 连接成功
+    Event.ListenEvent("WIFI CONNECTED", [](uint8_t* data, int len) {
+        self.Flags.isConnectAP = true;
+    });
+
+    // 监听 获取IP成功
+    Event.ListenEvent("WIFI GOT IP", [](uint8_t* data, int len) {
+        self.Flags.isGotIP = true;
+    });
+
+    // 监听 获取ip info回传
+    Event.ListenEvent("+CIPSTA", [](uint8_t* data, int len) {
+        // 找到内容开头
+        char* s;
+        s = strchr((char*)data, '"');
+        if (s == NULL) {
+            return;
+        }
+        s = s + 1;
+
+        // 去除末尾
+        char* s2;
+        s2 = strchr(s, '"');
+        if (s2 == NULL) {
+            return;
+        }
+        *s2 = 0;
+        // ip
+        if (TextUtil::WithStart((char*)data, "+CIPSTA:ip")) {
+            self.ConectApInfo.ip = s;
+            return;
+        }
+        // gateway
+        if (TextUtil::WithStart((char*)data, "+CIPSTA:gateway")) {
+            self.ConectApInfo.gateway = s;
+            return;
+        }
+        // mask
+        if (TextUtil::WithStart((char*)data, "+CIPSTA:mask")) {
+            self.ConectApInfo.netmask = s;
+            return;
+        }
+
+        self.Flags.isGotIP = true;
     });
 
 
@@ -41,47 +87,62 @@ Wifi::~Wifi() {
 }
 
 // AT 操作选择器
-bool Wifi::WifiSmAtSelect(){
+bool Wifi::WifiSmAtSelect() {
     // 复位
-    if(ATFlags.flag.reset) {
+    if (ATFlags.flag.reset) {
         ATFlags.flag.reset = 0;
         TopLayerSM.Goto(WifiTopLayerState_reset);
     }
     // 扫描AP
-    if(ATFlags.flag.scanAP){
+    if (ATFlags.flag.scanAP) {
         ATFlags.flag.scanAP = 0;
         // 激活异步AT处理
         asyncATEvent.Init("AT+CWLAP\r\n", [](AsyncATEvent::Event event) {
-            if(event == AsyncATEvent::EventOK) {
+            if (event == AsyncATEvent::EventOK) {
                 self.Flags.isScanApOver = true;
             }
-        }, 20000, true );
+        }, 20000, true);
         return true;
     }
     // 连接AP
-    if(ATFlags.flag.connectAP){
+    if (ATFlags.flag.connectAP) {
         ATFlags.flag.connectAP = 0;
         char info[128];
-        snprintf(info, sizeof(info)-1, "AT+CWJAP=\"%s\",\"%s\"\r\n", ConectApInfo.ssid.c_str(), ConectApInfo.password.c_str());
+        snprintf(info, sizeof(info) - 1, "AT+CWJAP=\"%s\",\"%s\"\r\n", ConectApInfo.ssid.c_str(), ConectApInfo.password.c_str());
         // 激活异步AT处理
         asyncATEvent.Init(info, [](AsyncATEvent::Event event) {
-            if(event == AsyncATEvent::EventOK) {
-                self.Flags.isConnectAP = true;
+            if (event == AsyncATEvent::EventOK) {
+
             }
-        }, 20000, true );
+        }, 20000, true);
         return true;
     }
     // 获取IP信息   
-    if(ATFlags.flag.getIPInfo) {
+    if (ATFlags.flag.getIPInfo) {
         ATFlags.flag.getIPInfo = 0;
         // 激活异步AT处理
         asyncATEvent.Init("AT+CIPSTA?\r\n", [](AsyncATEvent::Event event) {
-            if(event == AsyncATEvent::EventOK) {
+            if (event == AsyncATEvent::EventOK) {
                 logd("get ip info OK");
+            }
+        }, 2222, false);
+        return true;
+    }
+
+    // 连接 socket
+    if (ATFlags.flag.connectSocket) {
+        ATFlags.flag.connectSocket = 0;
+        char info[128];
+        snprintf(info, sizeof(info) - 1, "AT+CIPSTART=\"%s\",\"%s\",%s\r\n", SocketInfo.type.c_str(), SocketInfo.host.c_str(), SocketInfo.port.c_str());
+        asyncATEvent.Init(info, [](AsyncATEvent::Event event) {
+            if (event == AsyncATEvent::EventOK) {
+                logd("connect socket OK");
+                self.Flags.isSocketConnected = true;
             }
         }, 5555, true);
         return true;
     }
+
     return false;
 }
 
@@ -90,10 +151,10 @@ bool Wifi::WifiSmAtSelect(){
 void Wifi::TopLayerSMInit()
 {
     // 待机
-    TopLayerSM.AddStateNode(WifiTopLayerState_off, [](StateMachine::StateType beforState) -> StateMachine::StateType{
+    TopLayerSM.AddStateNode(WifiTopLayerState_off, [](StateMachine::StateType beforState) -> StateMachine::StateType {
         return WifiTopLayerState_off;
     });
-    TopLayerSM.LinkState(WifiTopLayerState_off, WifiTopLayerState_off, [](){});
+    TopLayerSM.LinkState(WifiTopLayerState_off, WifiTopLayerState_off, []() {});
 
     // 错误
     TopLayerSM.AddStateNode(WifiTopLayerState_error, [](StateMachine::StateType beforState) -> StateMachine::StateType
@@ -140,6 +201,9 @@ void Wifi::TopLayerSMInit()
         if (beforState != WifiTopLayerState_reset) {
 
             logd("wifi reset begin...");
+            // 强制切换到 AT 模式
+            self.Flags.isAT_Mode = true;
+            self.Flags.isTT_Mode = false;
 
             self.Respones.Clear();
             TxMsgDef msg;
@@ -216,13 +280,13 @@ void Wifi::TopLayerSMInit()
             else {
                 // 当前为 TT 模式 先退出 TT 模式
                 // 退出之前至少等待 200ms
-                if(befor != WifiTopLayerState_AT_check) {
+                if (befor != WifiTopLayerState_AT_check) {
                     timeoutFlag = false;
                     timerHandle = self.timerComponent.AddTimer(200, []() {
                         timeoutFlag = true;
                     });
                 }
-                if(timeoutFlag == false) {
+                if (timeoutFlag == false) {
                     return WifiTopLayerState_AT_check;
                 }
                 return WifiTopLayerState_TT_exit;
@@ -257,6 +321,7 @@ void Wifi::TopLayerSMInit()
         }
         if (timeoutFlag == false)
         {
+            self.Flags.isTT_Mode = false;
             return WifiTopLayerState_TT_exit;
         }
         return WifiTopLayerState_AT_entry;
@@ -285,11 +350,12 @@ void Wifi::TopLayerSMInit()
             });
         }
         // 响应 OK
-        if(self.Respones.ok)
+        if (self.Respones.ok)
         {
             self.Flags.isAT_Mode = true;
             return WifiTopLayerState_AT;
-        }else if (self.Respones.error) // 响应 error
+        }
+        else if (self.Respones.error) // 响应 error
         {
             return WifiTopLayerState_error;
         }
@@ -309,32 +375,32 @@ void Wifi::TopLayerSMInit()
     TopLayerSM.AddStateNode(WifiTopLayerState_AT, [](int befor)->int {
         static bool isRun = false;
         //
-        if(befor != WifiTopLayerState_AT) {
+        if (befor != WifiTopLayerState_AT) {
             logd("wifi AT exec ...");
             // AT操作选择器
-            if(self.WifiSmAtSelect()) {
+            if (self.WifiSmAtSelect()) {
                 isRun = true;
                 return WifiTopLayerState_AT;
             }
-            
+
             // 没有找到指令 跳过 AT 执行过程
             isRun = false;
-        } 
-        if(isRun) {
+        }
+        if (isRun) {
             AsyncATEvent::Event e = self.asyncATEvent.Polling();
             // 事件进行中
-            if(e == AsyncATEvent::EventNone) {
+            if (e == AsyncATEvent::EventNone) {
                 return WifiTopLayerState_AT;
             }
             isRun = false;
             // 完成
-            if(e == AsyncATEvent::EventOK) {
+            if (e == AsyncATEvent::EventOK) {
                 return WifiTopLayerState_TT_check;
             }
             // 错误 | 超时
             // if(e == AsyncATEvent::EventError || e == AsyncATEvent::EventErrorTimeout || e== AsyncATEvent::EventErrorWrite) {
             // }
-            if(e == AsyncATEvent::EventErrorTimeout) {
+            if (e == AsyncATEvent::EventErrorTimeout) {
                 logd("wifi AT exec timeout");
             }
             return WifiTopLayerState_error;
@@ -348,9 +414,9 @@ void Wifi::TopLayerSMInit()
 
     // 检查是否需要执行透传
     TopLayerSM.AddStateNode(WifiTopLayerState_TT_check, [](int befor)->int {
-        if(self.Flags.isConnectAP && self.Flags.isConnectSocket) {
+        if (self.Flags.isConnectAP && self.Flags.isSocketConnected) {
             // 当前处于AT模式 需要退出AT模式
-            if(self.Flags.isAT_Mode) {
+            if (self.Flags.isAT_Mode) {
                 return WifiTopLayerState_AT_exit;
             }
             // 当前为 TT 模式 直接进入透传
@@ -364,35 +430,20 @@ void Wifi::TopLayerSMInit()
 
     // 退出 AT 模式
     TopLayerSM.AddStateNode(WifiTopLayerState_AT_exit, [](int befor)->int {
-        static bool timeoutFlag;
-        static int timerHandle;
-        if(befor != WifiTopLayerState_AT_exit) {
+        if (befor != WifiTopLayerState_AT_exit) {
             logd("wifi AT exit ...");
             // 清空响应 必须先于发送指令执行
             self.Respones.Clear();
             // 进入(透传接收模式)
-            TxMsgDef msg;
-            msg.size = sprintf((char*)msg.data, "AT+CIPMODE=1\r\n");
-            self.TxQueue.push(msg);
-            //
-            timeoutFlag = false;
-            timerHandle = self.timerComponent.AddTimer(4000, []() {
-                timeoutFlag = true;
-            });
+            self.asyncATEvent.Init("AT+CIPMODE=1\r\n", [](AsyncATEvent::Event event) {}, 4000, true);
         }
-        // 响应 OK
-        if(self.Respones.ok)
-        {
+        AsyncATEvent::Event e = self.asyncATEvent.Polling();
+        if (e == AsyncATEvent::EventNone) {
+            return WifiTopLayerState_AT_exit;
+        }
+        if (e == AsyncATEvent::EventOK) {
             self.Flags.isAT_Mode = false;
             return wifiTopLayerState_TT_entry;
-        }else if (self.Respones.error) // 响应 error
-        {
-            return WifiTopLayerState_error;
-        }
-        // 超时检测
-        if (!timeoutFlag)
-        {
-            return WifiTopLayerState_AT_exit;
         }
         // 超时
         return WifiTopLayerState_error;
@@ -404,35 +455,22 @@ void Wifi::TopLayerSMInit()
 
     // 切换透传
     TopLayerSM.AddStateNode(wifiTopLayerState_TT_entry, [](int befor)->int {
-        static bool timeoutFlag;
-        static int timerHandle;
-        if(befor != WifiTopLayerState_AT_exit) {
-            logd("wifi AT exit ...");
+        if (befor != wifiTopLayerState_TT_entry) {
+            logd("wifi entry TT Mode ...");
             // 清空响应 必须先于发送指令执行
             self.Respones.Clear();
             // 进入透传模式
-            TxMsgDef msg;
-            msg.size = sprintf((char*)msg.data, "AT+CIPSEND\r\n");
-            self.TxQueue.push(msg);
-            //
-            timeoutFlag = false;
-            timerHandle = self.timerComponent.AddTimer(4000, []() {
-                timeoutFlag = true;
-            });
+            self.asyncATEvent.Init("AT+CIPSEND\r\n", [](AsyncATEvent::Event event) {}, 100, false);
+        }
+        // 等待响应
+        AsyncATEvent::Event e = self.asyncATEvent.Polling();
+        if (e == AsyncATEvent::EventNone) {
+            return wifiTopLayerState_TT_entry;
         }
         // 响应 OK
-        if(self.Respones.ok)
-        {
-            self.Flags.isAT_Mode = false;
+        if (e == AsyncATEvent::EventOK) {
+            self.Flags.isTT_Mode = true;
             return WifiTopLayerState_TT;
-        }else if (self.Respones.error) // 响应 error
-        {
-            return WifiTopLayerState_error;
-        }
-        // 超时检测
-        if (!timeoutFlag)
-        {
-            return wifiTopLayerState_TT_entry;
         }
         // 超时
         return WifiTopLayerState_error;
@@ -440,11 +478,11 @@ void Wifi::TopLayerSMInit()
     TopLayerSM.LinkState(wifiTopLayerState_TT_entry, wifiTopLayerState_TT_entry, []() {});
     TopLayerSM.LinkState(wifiTopLayerState_TT_entry, WifiTopLayerState_error, []() {});
     TopLayerSM.LinkState(wifiTopLayerState_TT_entry, WifiTopLayerState_TT, []() {});
-    
+
 
     // 进行透传操作
     TopLayerSM.AddStateNode(WifiTopLayerState_TT, [](int befor)->int {
-        logd("wifi TT exec ...");
+        logd("wifi TT exec ... %d %d", self.Flags.isAT_Mode, self.Flags.isTT_Mode);
         return  WifiTopLayerState_AT_check;
     });
     TopLayerSM.LinkState(WifiTopLayerState_TT, WifiTopLayerState_AT_check, []() {});
@@ -454,18 +492,18 @@ void Wifi::TopLayerSMInit()
 }
 
 // 写
-int Wifi::write(uint8_t * data, int len){
+int Wifi::write(uint8_t* data, int len) {
     static OVERLAPPED wol = { 0 };
     static BOOL writeState;
     static DWORD writeSize;
-    
+
     ResetEvent(wol.hEvent);
     WriteFile(ttys, data, len, &writeSize, &wol);
     return len;
 }
 
 // 读
-int Wifi::read(uint8_t * buffer, int len){
+int Wifi::read(uint8_t* buffer, int len) {
     static OVERLAPPED rol = { 0 };
     static DWORD readSize;
 
@@ -478,10 +516,11 @@ int Wifi::read(uint8_t * buffer, int len){
 // 循环处理
 bool Wifi::Loop() {
     static uint8_t rxBuf[1024];
+    static uint8_t rxBufTT[1024];
     static int rxBufRemainSize = 0;
     static int readSize;
     static bool rxBufRemainFlag;
-    
+
     // 定时器组件处理
     timerComponent.TimerLoop();
 
@@ -489,74 +528,98 @@ bool Wifi::Loop() {
     TopLayerSM.RunLoop();
 
     // 写串口
-    // 发送消息队列中的所有数据
-    while (TxQueue.empty() == false)
-    {
-        TxMsgDef& msg = TxQueue.front();
-        logd("TX >> %s", msg.data);
-        write(msg.data, msg.size);
-        TxQueue.pop();
+    // AT 模式
+    if (Flags.isTT_Mode) { // 透传模式
+        // 发送消息队列中的所有数据
+        while (TxQueueTT.empty() == false)
+        {
+            TxMsgDef& msg = TxQueueTT.front();
+            logd("TT_TX >> %s", msg.data);
+            write(msg.data, msg.size);
+            TxQueueTT.pop();
+        }
+    }
+    else {
+        // 发送消息队列中的所有数据
+        while (TxQueue.empty() == false)
+        {
+            TxMsgDef& msg = TxQueue.front();
+            logd("TX >> %s", msg.data);
+            write(msg.data, msg.size);
+            TxQueue.pop();
+        }
     }
 
     // 读串口
-    readSize = read(rxBuf + rxBufRemainSize, 1024);
-    //异步不需要处理返回值
-    if (readSize < 1)
-    {
-        return true;
-    }
-    readSize += rxBufRemainSize;
-    rxBuf[readSize] = 0;
-    logd("RX size: %d", readSize);
-
-    // 检查 是否以换行结尾 判断 是否有不完整数据残留
-    if (rxBuf[readSize - 2] == '\r' && rxBuf[readSize - 1] == '\n')
-    {
-        rxBufRemainFlag = false;
-    }
-    else
-    {
-        // 有残留数据
-        rxBufRemainFlag = true;
-    }
-
-    // 取出每一行
-    int lineCount = TextUtil::Split((char*)rxBuf, "\r\n", -1);
-    if (rxBufRemainFlag) {
-        lineCount -= 1;
-    }
-    // logd("line count: %d", lineCount);
-
-    // 处理每一行
-    char* line = (char*)rxBuf;
-    for (size_t i = 0; i < lineCount; i++)
-    {
-        logd("RX line >> %s", line);
-
-        // 遍历c++ map
-        for (auto& it : Event.EventPool)
+    // AT 模式
+    if (Flags.isAT_Mode) {
+        readSize = read(rxBuf + rxBufRemainSize, 1024);
+        //异步不需要处理返回值
+        if (readSize < 1)
         {
-            if (TextUtil::WithStart(line, it.first.c_str()))
-            {
-                Event.Exec(it.first.c_str(), (uint8_t*)line, strlen(line));
-            }
+            return true;
         }
-        // 切换下一行
-        line = line + (strlen(line) + 2);
+        readSize += rxBufRemainSize;
+        rxBuf[readSize] = 0;
+        logd("AT_RX size: %d", readSize);
+
+        // 检查 是否以换行结尾 判断 是否有不完整数据残留
+        if (rxBuf[readSize - 2] == '\r' && rxBuf[readSize - 1] == '\n')
+        {
+            rxBufRemainFlag = false;
+        }
+        else
+        {
+            // 有残留数据
+            rxBufRemainFlag = true;
+        }
+
+        // 取出每一行
+        int lineCount = TextUtil::Split((char*)rxBuf, "\r\n", -1);
+        if (rxBufRemainFlag) {
+            lineCount -= 1;
+        }
+        // logd("line count: %d", lineCount);
+
+        // 处理每一行
+        char* line = (char*)rxBuf;
+        for (size_t i = 0; i < lineCount; i++)
+        {
+            logd("AT_RX line >> %s", line);
+
+            // 遍历c++ map
+            for (auto& it : Event.EventPool)
+            {
+                if (TextUtil::WithStart(line, it.first.c_str()))
+                {
+                    Event.Exec(it.first.c_str(), (uint8_t*)line, strlen(line));
+                }
+            }
+            // 切换下一行
+            line = line + (strlen(line) + 2);
+        }
+
+        // 将残留数据拷贝到头部
+        // 计算残留数据长度
+        rxBufRemainSize = ((char*)rxBuf + readSize) - line;
+        if (rxBufRemainFlag)
+        {
+            logd("RX remain %d", rxBufRemainSize);
+            memcpy(rxBuf, line, rxBufRemainSize);
+        }
+        else {
+            rxBufRemainSize = 0;
+        }
+        logd("RX End ---------------");
+    }
+    else { //透传接收模式
+        readSize = read(rxBufTT, sizeof(rxBufTT) - 1);
+        if (readSize < 1) {
+            return true;
+        }
+        rxBufTT[readSize] = 0;
+        logd("TT_RX >>> %s", rxBufTT);
     }
 
-    // 将残留数据拷贝到头部
-    // 计算残留数据长度
-    rxBufRemainSize = ((char*)rxBuf + readSize) - line;
-    if (rxBufRemainFlag)
-    {
-        logd("RX remain %d", rxBufRemainSize);
-        memcpy(rxBuf, line, rxBufRemainSize);
-    }
-    else {
-        rxBufRemainSize = 0;
-    }
-    logd("RX End ---------------");
-    
     return true;
 }

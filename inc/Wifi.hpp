@@ -75,7 +75,7 @@ public:
         WifiATState_disconnectSocket,
     }ATState;
 
-    // wifi 功能标志
+    // AT操作触发标志
     typedef union
     {
         struct {
@@ -90,21 +90,37 @@ public:
         uint64_t notEmpty;
     } ATFlagsDef;
 
+    // 模块状态标志
     typedef struct {
-        bool isEN;
-        bool isRun;
-        bool isAT_Mode;
-        bool isScanApOver;
-        bool isConnectAP;
-        bool isConnectSocket;
+        bool isEN; // 模块使能
+        bool isRun; // 模块运行中
+        bool isAT_Mode; // 运行于 AT 模式
+        bool isTT_Mode; // 运行于 TT 模式
+        bool isScanApOver; // 扫描 AP 完成
+        bool isConnectAP; // 连接 AP 成功
+        bool isGotIP;   // 获取 IP 成功
+        bool isSocketConnected; // 连接 Socket 成功
     }FlagsDef;
 
+    // 热点连接信息
     typedef struct {
         string ssid;
         string password;
         string mac;
         string ip;
+        string gateway;
+        string netmask;
     }ConectApInfoDef;
+
+    // Socket 连接信息
+    typedef struct {
+        string type;
+        string host;
+        string port;
+    } SocketInfoDef;
+
+    // Socket 连接信息
+    SocketInfoDef SocketInfo;
 
     // wifi 连接信息
     ConectApInfoDef ConectApInfo;
@@ -128,6 +144,10 @@ public:
 
     // 发送队列
     queue<TxMsgDef> TxQueue;
+    
+    // 透传发送队列
+    queue<TxMsgDef> TxQueueTT;
+
     // 响应器 
     ResponesDef Respones;
 

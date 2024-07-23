@@ -75,7 +75,8 @@ int main(int argc, const char** argv)
 
 
     // 当端口号 大于 9时 要用 \\\\.\\COMx
-    HANDLE hSerial = CreateFile("\\\\.\\COM16",
+    // HANDLE hSerial = CreateFile("\\\\.\\COM16",
+    HANDLE hSerial = CreateFile("COM7",
         GENERIC_READ | GENERIC_WRITE,
         0,
         NULL,

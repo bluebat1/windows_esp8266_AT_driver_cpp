@@ -7,10 +7,11 @@
 // 3、扫描AP
 // 4、等待扫描完成
 // 5、连接AP
-// 6、连接 tcp
-// 7、向TCP透传数据
-// 8、接收来自TCP的透传数据
-// 9、断开TCP
+// 6、等待IP分配
+// 7、连接 tcp
+// 8、向TCP透传数据
+// 9、接收来自TCP的透传数据
+// 10、断开TCP
 void Test1(){
     static int step = 0;
     // 
@@ -59,14 +60,35 @@ void Test1(){
         break;
     case 5:
         // 等待AP连接成功
-        if(Wifi::Instance().Flags.isConnectAP) {
+        if(Wifi::Instance().Flags.isGotIP) {
             step = 6;
             logd("step 6");
-
+            Wifi::Instance().ATFlags.flag.getIPInfo = 1;
         }
         break;
     case 6:
         // 连接TCP
+        Wifi::Instance().SocketInfo.type = "TCP";
+        Wifi::Instance().SocketInfo.host = "192.168.3.166";
+        Wifi::Instance().SocketInfo.port = "8080";
+        Wifi::Instance().ATFlags.flag.connectSocket = 1;
+        step = 7;
+        logd("step 7");
+        break;
+    case 7:
+        // 等待连接成功
+        if(Wifi::Instance().Flags.isSocketConnected) {
+            step = 8;
+            logd("step 8");
+        }
+        break;
+    case 8:
+        // 向TCP发送数据
+        Wifi::TxMsgDef msg;
+        msg.size = sprintf((char *)msg.data, "esp msg ... \r\n");
+        Wifi::Instance().TxQueueTT.push(msg);
+        step = 9;
+        logd("step 9");
         break;
     default:
         break;
