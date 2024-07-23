@@ -89,6 +89,47 @@ void Test1(){
         Wifi::Instance().TxQueueTT.push(msg);
         step = 9;
         logd("step 9");
+        
+        // 等待5S
+        Wifi::Instance().timerComponent.AddTimer(5000, [](){
+            step = 10;
+            logd("step 10");
+        });
+        break;
+    case 9:
+        break;
+    case 10:
+        // 断开socket连接
+        Wifi::Instance().ATFlags.flag.disconnectSocket = 1;
+        step = 11;
+        logd("step 11");
+        Wifi::Instance().timerComponent.AddTimer(5000, [](){
+            step = 12;
+            logd("step 12");
+        });
+        break;
+    case 11:
+        // 等待2S
+        break;
+    case 12:
+        // 扫描wifi
+        Wifi::Instance().Flags.isScanApOver = false;
+        Wifi::Instance().ATFlags.flag.scanAP = 1;
+        step = 13;
+        logd("step 13");
+
+        break;
+    case 13:
+        if(Wifi::Instance().Flags.isScanApOver) {
+            step = 14;
+            logd("step 14");
+        }
+        break;;
+    case 14:
+        // 断开AP连接
+        Wifi::Instance().ATFlags.flag.disconnectAP = 1;
+        step = 15;
+        logd("step 15");
         break;
     default:
         break;

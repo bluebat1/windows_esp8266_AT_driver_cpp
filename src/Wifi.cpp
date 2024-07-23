@@ -112,9 +112,20 @@ bool Wifi::WifiSmAtSelect() {
         // 激活异步AT处理
         asyncATEvent.Init(info, [](AsyncATEvent::Event event) {
             if (event == AsyncATEvent::EventOK) {
-
+                self.Flags.isConnectAP = true;
             }
         }, 20000, true);
+        return true;
+    }
+    // 断开 AP 连接
+    if(ATFlags.flag.disconnectAP){
+        ATFlags.flag.disconnectAP = 0;
+        asyncATEvent.Init("AT+CWQAP\r\n", [](AsyncATEvent::Event event) {
+            if (event == AsyncATEvent::EventOK) {
+                logd("disconnect AP OK");
+                self.Flags.isConnectAP = false;
+            }
+        }, 5555, true);
         return true;
     }
     // 获取IP信息   
@@ -143,6 +154,18 @@ bool Wifi::WifiSmAtSelect() {
         return true;
     }
 
+    // 断开socket
+    if(ATFlags.flag.disconnectSocket) {
+        ATFlags.flag.disconnectSocket = 0;
+        asyncATEvent.Init("AT+CIPCLOSE\r\n", [](AsyncATEvent::Event event) {
+            if (event == AsyncATEvent::EventOK) {
+                logd("disconnect socket OK");
+                self.Flags.isSocketConnected = false;
+            }
+        }, 5555, true);
+        return true;
+    }
+
     return false;
 }
 
@@ -164,19 +187,15 @@ void Wifi::TopLayerSMInit()
         if (WifiTopLayerState_error != beforState) {
             logd("WifiTopLayerState_error from : %d", beforState);
 
-            // 退出 透传模式
-            TxMsgDef msg;
-            msg.size = sprintf((char*)msg.data, "+++");
-            self.TxQueue.push(msg);
+            self.Flags.isEN = false;
 
-            // 添加一个定时器
-            timeoutFlag = false;
-            self.timerComponent.AddTimer(555, []() {
-                timeoutFlag = true;
-            });
+            // 退出 透传模式
+            self.asyncATEvent.Init("+++", [](AsyncATEvent::Event event) {}, 555, false);
+            return WifiTopLayerState_error;
         }
         // 等待完成
-        if (timeoutFlag == false) {
+        AsyncATEvent::Event e = self.asyncATEvent.Polling();
+        if(e == AsyncATEvent::EventNone) {
             return WifiTopLayerState_error;
         }
         // 前往复位环节
@@ -337,32 +356,18 @@ void Wifi::TopLayerSMInit()
         // first entry
         if (befor != WifiTopLayerState_AT_entry) {
             logd("wifi AT entry ...");
-            // 清空响应 必须先于发送指令执行
-            self.Respones.Clear();
             // 退出 透传模式
-            TxMsgDef msg;
-            msg.size = sprintf((char*)msg.data, "AT+CIPMODE=0\r\n");
-            self.TxQueue.push(msg);
-            //
-            timeoutFlag = false;
-            timerHandle = self.timerComponent.AddTimer(4000, []() {
-                timeoutFlag = true;
-            });
-        }
-        // 响应 OK
-        if (self.Respones.ok)
-        {
-            self.Flags.isAT_Mode = true;
-            return WifiTopLayerState_AT;
-        }
-        else if (self.Respones.error) // 响应 error
-        {
-            return WifiTopLayerState_error;
-        }
-        // 超时检测
-        if (!timeoutFlag)
-        {
+            self.asyncATEvent.Init("AT+CIPMODE=0\r\n", [](AsyncATEvent::Event e) { }, 4000, true);
             return WifiTopLayerState_AT_entry;
+        }
+        // 轮询等待
+        AsyncATEvent::Event e = self.asyncATEvent.Polling();
+        if(e == AsyncATEvent::EventNone){ 
+            return WifiTopLayerState_AT_entry;
+        }
+        // OK
+        if(e == AsyncATEvent::EventOK) {
+            return WifiTopLayerState_AT;
         }
         // 超时
         return WifiTopLayerState_error;
@@ -460,7 +465,7 @@ void Wifi::TopLayerSMInit()
             // 清空响应 必须先于发送指令执行
             self.Respones.Clear();
             // 进入透传模式
-            self.asyncATEvent.Init("AT+CIPSEND\r\n", [](AsyncATEvent::Event event) {}, 100, false);
+            self.asyncATEvent.Init("AT+CIPSEND\r\n", [](AsyncATEvent::Event event) {}, 5000, true);
         }
         // 等待响应
         AsyncATEvent::Event e = self.asyncATEvent.Polling();
